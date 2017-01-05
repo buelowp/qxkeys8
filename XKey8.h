@@ -71,8 +71,6 @@ public:
     bool isButtonDown(int num);
 	void turnButtonLedsOff();
 	void toggleButtonLEDState(int);
-	void turnButtonLedOff(int);
-	void turnButtonLedOn(int);
 
 	bool handleErrorEvent(unsigned int deviceID, unsigned int status);
 	bool handleDataEvent(unsigned char  *pData, unsigned int deviceID, unsigned int error);
