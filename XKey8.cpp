@@ -45,6 +45,9 @@ void XKey8::queryForDevice()
 		return;
 	}
 
+    qDebug() << __PRETTY_FUNCTION__ << ": enumerated" << count << "devices";
+    qDebug() << __PRETTY_FUNCTION__ << ": m_devicePath is" << m_devicePath;
+    
 	// Test for change in current device connection:
 	if(m_devicePath != "") {
 		for(int i = 0; i < count; i++) {
@@ -64,8 +67,8 @@ void XKey8::queryForDevice()
 	// Setup Interface:
 	for(int i = 0; i < count && !hasDevice(); i++) {
 		TEnumHIDInfo *d = &info[i];
-		if((d->PID == XK8_PID1 || d->PID == XK8_PID2) &&
-			d->UP == XK8_USAGE_PAGE && d->Usage == XK8_USAGE) {
+        qDebug() << __PRETTY_FUNCTION__ << ": Testing PID" << d->PID << ", UP" << d->UP << ", Usage" << d->Usage;
+		if((d->PID == XK8_PID1 || d->PID == XK8_PID2)) && d->UP == XK8_USAGE_PAGE && d->Usage == XK8_USAGE) {
 			setupDevice(d);
 			memset(m_buttons, 0, XK8_REPORT_LENGTH);
 			sendCommand(XK8_CMD_DESC, 0);
@@ -85,6 +88,8 @@ void XKey8::setupDevice(TEnumHIDInfo *d)
 		return;
 	}
 
+	qDebug() << __PRETTY_FUNCTION__ << ": Device setup for PID" << d->PID;
+    
 	e = SetupInterfaceEx(h);
 	if(e != 0) {
 		std::cerr << __PRETTY_FUNCTION__ << ": Failed [" << e << "] Setting up PI Engineering Device at " << p << std::endl;

@@ -25,8 +25,11 @@
 #define XK8_CMD_FLSH_FR 180
 #define XK8_CMD_SET_PID 204
 
-#define XK8_USAGE_PAGE 0xFFFF
-#define XK8_USAGE      0xFFFF
+//#define XK8_USAGE_PAGE 0xFFFF
+//#define XK8_USAGE      0xFFFF
+/* This is more correct based on later updates to the PI Engineering github */
+#define XK8_USAGE_PAGE 0x000c
+#define XK8_USAGE      0x0001
 
 #include <iostream>
 #include <QtCore/QtCore>
