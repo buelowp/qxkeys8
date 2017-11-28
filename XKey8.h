@@ -53,6 +53,7 @@ class XKey8 : public QObject {
 	Q_OBJECT
 public:
 	XKey8(QObject *parent = 0);
+    XKey8(int, QObject *parent = 0);
 	virtual ~XKey8();
 
 	bool         hasDevice()        { return (m_dev != NULL); }; // && m_dev->Handle != 0
@@ -78,6 +79,8 @@ public:
 	bool handleErrorEvent(unsigned int deviceID, unsigned int status);
 	bool handleDataEvent(unsigned char  *pData, unsigned int deviceID, unsigned int error);
 
+    static int queryForDevices(vector<int>*);
+
 public slots:
 	void queryForDevice();
 
@@ -91,12 +94,14 @@ public slots:
 signals:
 	void panelDisconnected();
 	void panelConnected();
+    void panelConnected(int);
 
 	void errorEvent(unsigned int  status);
 	void dataEvent(unsigned char *pData);
 
 	void buttonDown(int, unsigned int);
 	void buttonUp(int);
+    void buttonUp(int, int);
 	void buttonUp(int, unsigned int, int);
 
 protected:
@@ -119,7 +124,7 @@ private:
 	buttonCallback m_bcb;
 	errorCallback m_ecb;
 	QVector<LEDMode> m_buttonLedState;
-
+    uint32_t m_handle;
 };
 
 #endif /* XKEY8_H_ */

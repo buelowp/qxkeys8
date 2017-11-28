@@ -13,6 +13,22 @@ XKey8::XKey8(QObject* parent) : QObject(parent)
 	m_devicePath = "";
 	m_bcb = NULL;
 	m_ecb = NULL;
+    m_handle = 0;
+
+	m_buttons = new unsigned char[XK8_REPORT_LENGTH];
+	for (int i = 0; i < 12; i++) {
+		m_buttonTimes.push_back(0);
+		m_buttonLedState.push_back(LEDMode::OFF);
+	}
+}
+
+XKey8::XKey8(int dev, QObject* parent) : QObject(parent)
+{
+	m_dev        = NULL;
+	m_devicePath = "";
+	m_bcb = NULL;
+	m_ecb = NULL;
+    m_handle = dev;
 
 	m_buttons = new unsigned char[XK8_REPORT_LENGTH];
 	for (int i = 0; i < 12; i++) {
@@ -32,6 +48,31 @@ XKey8::~XKey8()
 	delete m_buttons;
 }
 
+static int XKey8::queryForDevices(vector<int> *handles)
+{
+	TEnumHIDInfo info[MAX_XKEY_DEVICES];
+	long count;
+
+	unsigned int res = EnumeratePIE(PI_VID, info, &count);
+
+	if(res != 0) {
+		std::cerr << "QXKeys: Error [" << res << "] Finding PI Engineering Devices." << std::endl;
+		return 0;
+	}
+
+    qDebug() << __PRETTY_FUNCTION__ << ": enumerated" << count << "devices";
+    qDebug() << __PRETTY_FUNCTION__ << ": m_devicePath is" << m_devicePath;
+    
+    for (int i = 0; i < count; i++) {
+		TEnumHIDInfo *d = &info[i];
+        if (d->PID == XK8_PID1 || d->PID == XK8_PID2) && d->UP == XK8_USAGE_PAGE && d->Usage == XK8_USAGE) {
+            qDebug() << __PRETTY_FUNCTION__ << ": Found PID" << d->PID << ", UP" << d->UP << ", Usage" << d->Usage << ", handle" << d->Handle;
+            handles->push_back(d->Handle);
+        }
+    }
+    return handles->size();
+}
+
 // Slot:
 void XKey8::queryForDevice()
 {
@@ -45,9 +86,6 @@ void XKey8::queryForDevice()
 		return;
 	}
 
-    qDebug() << __PRETTY_FUNCTION__ << ": enumerated" << count << "devices";
-    qDebug() << __PRETTY_FUNCTION__ << ": m_devicePath is" << m_devicePath;
-    
 	// Test for change in current device connection:
 	if(m_devicePath != "") {
 		for(int i = 0; i < count; i++) {
@@ -67,13 +105,13 @@ void XKey8::queryForDevice()
 	// Setup Interface:
 	for(int i = 0; i < count && !hasDevice(); i++) {
 		TEnumHIDInfo *d = &info[i];
-        qDebug() << __PRETTY_FUNCTION__ << ": Testing PID" << d->PID << ", UP" << d->UP << ", Usage" << d->Usage;
-		if((d->PID == XK8_PID1 || d->PID == XK8_PID2)) && d->UP == XK8_USAGE_PAGE && d->Usage == XK8_USAGE) {
+		if((d->PID == XK8_PID1 || d->PID == XK8_PID2) && d->Handle == m_handle) { // && d->UP == XK8_USAGE_PAGE && d->Usage == XK8_USAGE) {
+            qDebug() << __PRETTY_FUNCTION__ << ": Found device with handle" << d->Handle;
 			setupDevice(d);
 			memset(m_buttons, 0, XK8_REPORT_LENGTH);
 			sendCommand(XK8_CMD_DESC, 0);
 			sendCommand(XK8_CMD_TIMES, true);
-			emit panelConnected();
+			emit panelConnected(d->Handle);
 		}
 	}
 }
@@ -259,7 +297,7 @@ void XKey8::processButtons(unsigned char *pData)
 
 				qWarning() << __PRETTY_FUNCTION__ << ": button" << buttonId << ", time =" << time << ", duration =" << duration;
 
-				emit buttonUp(buttonId);
+				emit buttonUp(m_handle, buttonId);
 				emit buttonUp(buttonId, time, duration);
 			}
 		}
