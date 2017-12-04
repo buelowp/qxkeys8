@@ -14,7 +14,9 @@
 #define XK8_REPORT_LENGTH 33
 #define XK8_MESSAGE_LENGTH 36
 
-#define XK8_BUTTONS 8
+#define XK8_BUTTONS     10  // Technically, it's 8, but ordering skips 6 and 7, so the last button is 9 for 10 buttons
+#define XK8_MAX_PANELS  4
+#define XK8_MAX_BUTTONS (XK8_BUTTONS * XK8_MAX_PANELS)
 
 #define XK8_CMD_BTN_LED 181
 #define XK8_CMD_PNL_LED 179
@@ -56,7 +58,7 @@ public:
     XKey8(int, QObject *parent = 0);
 	virtual ~XKey8();
 
-	bool         hasDevice()        { return (m_dev != NULL); }; // && m_dev->Handle != 0
+	bool         hasDevice(int handle); // && m_dev->Handle != 0
 
     unsigned int getPID()           { return (hasDevice() ? m_dev->PID : 0); };
     unsigned int getUsage()         { return (hasDevice() ? m_dev->Usage : 0); };
@@ -79,10 +81,8 @@ public:
 	bool handleErrorEvent(unsigned int deviceID, unsigned int status);
 	bool handleDataEvent(unsigned char  *pData, unsigned int deviceID, unsigned int error);
 
-    static int queryForDevices(vector<int>*);
-
 public slots:
-	void queryForDevice();
+	void queryForDevices();
 
 	void setBacklightIntensity(float blueBrightness);
 	void setFlashFrequency(unsigned char freq);
@@ -117,10 +117,11 @@ private:
 
 	unsigned char* createDataBuffer();
 
-	TEnumHIDInfo *m_dev;
+	QVector<TEnumHIDInfo*> m_devs;
+    QMap<int, int> m_buttonHandles;
 	unsigned char *m_buttons;
 	QVector<int> m_buttonTimes;
-	QString m_devicePath;
+	QMap<int, QString> m_devicePaths;
 	buttonCallback m_bcb;
 	errorCallback m_ecb;
 	QVector<LEDMode> m_buttonLedState;
