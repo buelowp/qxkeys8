@@ -9,6 +9,8 @@
 
 XKey8::XKey8(QObject* parent) : QObject(parent)
 {
+    m_bcb = NULL;
+    m_ecb = NULL;
 	m_buttons = new unsigned char[XK8_REPORT_LENGTH];
 	for (int i = 0; i < XK8_MAX_BUTTONS; i++) {
 		m_buttonTimes[i] = 0;
@@ -74,54 +76,48 @@ void XKey8::queryForDevices()
 		if((d->PID == XK8_PID1 || d->PID == XK8_PID2) && d->UP == XK8_USAGE_PAGE) { // && d->UP == XK8_USAGE_PAGE && d->Usage == XK8_USAGE) {
             qDebug() << __PRETTY_FUNCTION__ << ": Found device with handle" << d->Handle;
             if (!hasDevice(d->Handle)) {
-                setupDevice(d);
-                memset(m_buttons, 0, XK8_REPORT_LENGTH);
-                sendCommand(XK8_CMD_DESC, 0);
-                sendCommand(XK8_CMD_TIMES, true);
-                emit panelConnected(d->Handle);
+                if (setupDevice(d)) {
+                    memset(m_buttons, 0, XK8_REPORT_LENGTH);
+                    sendCommand(d->Handle, XK8_CMD_DESC, 0);
+                    sendCommand(d->Handle, XK8_CMD_TIMES, true);
+                    emit panelConnected(d->Handle);
+                }
             }
 		}
 	}
 }
 
-void XKey8::setupDevice(TEnumHIDInfo *d)
+bool XKey8::setupDevice(TEnumHIDInfo *d)
 {
 	int h;
 	unsigned int e;
 
 	if(d == NULL) {
         qWarning() << __PRETTY_FUNCTION__ << ": HID Info struct is NULL, this is not good";
-		return;
+		return false;
 	}
 
     h = d->Handle;
-    QMap<int, buttonCallback>::const_iterator i = m_bcb.find(h);
-    if (i == m_bcb.end()) {
-        qWarning() << __PRETTY_FUNCTION__ << ": no data callback defined for handle" << h;
-        return;
+    if (!m_bcb || !m_ecb) {
+        qWarning() << __PRETTY_FUNCTION__ << ": No callbacks defined";
+        return false;
     }
-
-    QMap<int, errorCallback>::const_iterator j = m_ecb.find(h);
-    if (j == m_ecb.end()) {
-        qWarning() << __PRETTY_FUNCTION__ << ": no error callback defined for handle" << h;
-        return;
-    }
-
+    
 	qDebug() << __PRETTY_FUNCTION__ << ": Device setup for PID" << d->PID << "with handle" << h;
     
     if ((e = SetupInterfaceEx(h)) != 0) {
 		std::cerr << __PRETTY_FUNCTION__ << ": Failed [" << e << "] Setting up PI Engineering Device at " << d->DevicePath << std::endl;
-		return;
+		return false;
 	}
 
-    if ((e = SetDataCallback(h, m_bcb[h])) != 0) {
+    if ((e = SetDataCallback(h, m_bcb)) != 0) {
 		std::cerr << __PRETTY_FUNCTION__ << ": Critical Error [" << e << "] setting event callback for device at " << d->DevicePath << std::endl;
-		return;
+		return false;
 	}
 
-    if ((e = SetErrorCallback(h, m_ecb[h])) != 0) {
+    if ((e = SetErrorCallback(h, m_ecb)) != 0) {
 		std::cerr << __PRETTY_FUNCTION__ << ": Critical Error [" << e << "] setting error callback for device at " << d->DevicePath << std::endl;
-		return;
+		return false;
 	}
 
 	SuppressDuplicateReports(h, false); // true?
@@ -133,6 +129,7 @@ void XKey8::setupDevice(TEnumHIDInfo *d)
         m_buttonHandleMap[globalButton] = h;
         m_buttonTranslationMap[globalButton] = i;
     }
+    return true;
 }
 
 bool XKey8::handleDataEvent(unsigned char *pData, unsigned int deviceID, unsigned int error)
@@ -178,8 +175,9 @@ bool XKey8::isButtonDown(int num)
 {
     int handle;
     
-    if ((handle = getHandleForButton(num)) == -1)
+    if ((handle = getHandleForButton(num)) == -1) {
         return false;
+    }
     
 	if(!hasDevice(handle) || isNotButtonNumber(num)) {
 		return false;
@@ -341,7 +339,8 @@ unsigned char * XKey8::createDataBuffer(int handle)
 {
     qDebug() << __PRETTY_FUNCTION__ << ": creating data buffer for handle" << handle;
 	int length = GetWriteLength(handle);
-
+    qDebug() << __PRETTY_FUNCTION__ << ": got buffer length" << length << "from XKey library";
+    
 	unsigned char *buffer = new unsigned char[length];
 	memset(buffer, 0, length);
 

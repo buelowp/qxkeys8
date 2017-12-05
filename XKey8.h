@@ -102,8 +102,8 @@ public:
 
     QString getProductString(int);
     QString getManufacturerString(int);
-    void registerCallback(int h, buttonCallback b) { m_bcb[h] = b; }
-    void registerErrorCallback(int h, errorCallback e) { m_ecb[h] = e; }
+    void registerCallback(buttonCallback b) { m_bcb = b; }
+    void registerErrorCallback(errorCallback e) { m_ecb = e; }
 
     bool isButtonDown(int num);
 	void turnButtonLedsOff(int);
@@ -149,7 +149,7 @@ protected:
     }
 
 private:
-	void setupDevice(TEnumHIDInfo *dev);
+	bool setupDevice(TEnumHIDInfo *dev);
 	void processButtons(int, unsigned char *pData);
 	bool isNotButtonNumber(int num);
 	uint32_t dataToTime(unsigned char *pData);
@@ -165,8 +165,8 @@ private:
 	unsigned char *m_buttons;
 	QMap<int, int> m_buttonTimes;           // Button number is the key
 	QMap<int, QString> m_devicePathMap;       // Handle is the key
-    QMap<int, buttonCallback> m_bcb;        // Handle is the key
-	QMap<int, errorCallback> m_ecb;         // Handle is the key
+    buttonCallback m_bcb;        // Handle is the key
+	errorCallback m_ecb;         // Handle is the key
 	QMap<int, LEDMode> m_buttonLedState;    // Button number is the key
 };
 
