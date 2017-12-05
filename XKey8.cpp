@@ -94,6 +94,7 @@ void XKey8::setupDevice(TEnumHIDInfo *d)
 		return;
 	}
 
+    h = d->Handle;
     QMap<int, buttonCallback>::const_iterator i = m_bcb.find(h);
     if (i == m_bcb.end()) {
         qWarning() << __PRETTY_FUNCTION__ << ": no data callback defined for handle" << h;
@@ -106,7 +107,6 @@ void XKey8::setupDevice(TEnumHIDInfo *d)
         return;
     }
 
-    h = d->Handle;
 	qDebug() << __PRETTY_FUNCTION__ << ": Device setup for PID" << d->PID << "with handle" << h;
     
     if ((e = SetupInterfaceEx(h)) != 0) {
