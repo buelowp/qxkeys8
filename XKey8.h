@@ -159,15 +159,15 @@ private:
 
 	unsigned char* createDataBuffer(int);
 
-	QMap<int, TEnumHIDInfo*> m_deviceMap;        // Handle is the key
-    QMap<int, int> m_buttonHandleMap;       // Button number is the key, handle is the value
-    QMap<int, int> m_buttonTranslationMap;  // Global button is the key, panel button is the value
-	unsigned char *m_buttons;
-	QMap<int, int> m_buttonTimes;           // Button number is the key
-	QMap<int, QString> m_devicePathMap;       // Handle is the key
-    buttonCallback m_bcb;        // Handle is the key
-	errorCallback m_ecb;         // Handle is the key
-	QMap<int, LEDMode> m_buttonLedState;    // Button number is the key
+	QMap<int, TEnumHIDInfo*> m_deviceMap;              // Handle is the key
+    QMap<int, int> m_buttonHandleMap;                  // Button number is the key, handle is the value
+    QMap<int, int> m_buttonTranslationMap;             // Global button is the key, panel button is the value
+	QMap<int, unsigned char *> m_buttons;              // Handle is the key, button char array is the value
+	QMap<int, QVector<int> > m_buttonTimes;            // Handle is the key
+	QMap<int, QString> m_devicePathMap;                // Handle is the key
+    buttonCallback m_bcb;
+	errorCallback m_ecb;
+	QMap<int, QVector<LEDMode> > m_buttonLedState;     // Button number is the key
 };
 
 #endif /* XKEY8_H_ */

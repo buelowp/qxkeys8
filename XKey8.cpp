@@ -11,11 +11,21 @@ XKey8::XKey8(QObject* parent) : QObject(parent)
 {
     m_bcb = NULL;
     m_ecb = NULL;
-	m_buttons = new unsigned char[XK8_REPORT_LENGTH];
-	for (int i = 0; i < XK8_MAX_BUTTONS; i++) {
-		m_buttonTimes[i] = 0;
-		m_buttonLedState[i] = LEDMode::OFF;
-	}
+    for (int i = 0; i < 4; i++) {
+        unsigned char *array = new unsigned char[XK8_REPORT_LENGTH];
+        memset(array, 0, XK8_REPORT_LENGTH);
+        m_buttons[i] = array;
+        
+        QVector<int> buttons;
+        QVector<LEDMode> modes;
+        
+        for (int j = 0; j < XK8_MAX_BUTTONS; j++) {
+            buttons.push_back(0);
+            modes.push_back(LEDMode::OFF);
+        }
+        m_buttonTimes[i] = buttons;
+        m_buttonLedState[i] = modes;
+    }
 }
 
 XKey8::~XKey8()
@@ -27,7 +37,9 @@ XKey8::~XKey8()
     m_deviceMap.clear();
     m_devicePathMap.clear();
 	//delete m_dev; responsiblity of piehid
-	delete m_buttons;
+    foreach (unsigned char* buttons, m_buttons) {
+        delete buttons;
+    }
 }
 
 bool XKey8::hasDevice(int handle)
@@ -77,7 +89,6 @@ void XKey8::queryForDevices()
             qDebug() << __PRETTY_FUNCTION__ << ": Found device with handle" << d->Handle;
             if (!hasDevice(d->Handle)) {
                 if (setupDevice(d)) {
-                    memset(m_buttons, 0, XK8_REPORT_LENGTH);
                     sendCommand(d->Handle, XK8_CMD_DESC, 0);
                     sendCommand(d->Handle, XK8_CMD_TIMES, true);
                     emit panelConnected(d->Handle);
@@ -173,7 +184,10 @@ bool XKey8::handleErrorEvent(unsigned int deviceID, unsigned int status)
 
 bool XKey8::isButtonDown(int num)
 {
+    unsigned char *buttons;
     int handle;
+    
+    qDebug() << __PRETTY_FUNCTION__ << ": testing button" << num << "for down state";
     
     if ((handle = getHandleForButton(num)) == -1) {
         return false;
@@ -182,11 +196,13 @@ bool XKey8::isButtonDown(int num)
 	if(!hasDevice(handle) || isNotButtonNumber(num)) {
 		return false;
 	}
+	buttons = m_buttons[handle];
+    
 	int col = 3 + num / 8; // button data stored in 3,4,5,6
 	int row = num % 8;
 	int bit = 1 << row;
 
-	bool isdown = (m_buttons[col] & bit) > 0;
+	bool isdown = (buttons[col] & bit) > 0;
 
 	return isdown;
 }
@@ -232,13 +248,19 @@ void XKey8::setBacklightIntensity(int handle, float blueBrightness)
         
 void XKey8::toggleButtonLEDState(int b)
 {
-	if (m_buttonLedState[b] == LEDMode::OFF) {
+    int handle;
+
+    if ((handle = getHandleForButton(b)) == -1) {
+        return;
+    }
+    
+	if (m_buttonLedState[handle][b] == LEDMode::OFF) {
 		setButtonBlueLEDState(b, LEDMode::ON);
-		m_buttonLedState[b] = LEDMode::ON;
+		m_buttonLedState[handle][b] = LEDMode::ON;
 	}
 	else {
 		setButtonBlueLEDState(b, LEDMode::OFF);
-		m_buttonLedState[b] = LEDMode::OFF;
+		m_buttonLedState[handle][b] = LEDMode::OFF;
 	}
 }
 
@@ -246,15 +268,16 @@ void XKey8::setButtonBlueLEDState(int ledNum, LEDMode mode)
 {
     int handle;
     
-    if ((handle = getHandleForButton(ledNum)) == -1)
+    if ((handle = getHandleForButton(ledNum)) == -1) {
         return;
+    }
 
     if(!hasDevice(handle) || isNotButtonNumber(ledNum)) {
 		return;
 	}
 
 	sendCommand(handle, XK8_CMD_BTN_LED, ledNum, mode);
-	m_buttonLedState[ledNum] = mode;
+	m_buttonLedState[handle][ledNum] = mode;
 }
 
 void XKey8::setPanelLED(PanelLED ledNum, LEDMode mode)
@@ -290,6 +313,10 @@ void XKey8::processButtons(int handle, unsigned char *pData)
 	int d = 3; // start byte
 	int buttonIndex = 0;
 	int buttonId = 0;
+    int globalButtonId = 0;
+    int offset = handle * 10;
+    unsigned char *buttonData =  m_buttons[handle];
+    QVector<int> buttonTimes = m_buttonTimes[handle];
 
 	for(int i = 0; i < columns; i++) {
 		for(int j = 0; j < rows; j++) {
@@ -299,30 +326,33 @@ void XKey8::processButtons(int handle, unsigned char *pData)
 				buttonId = buttonIndex + 2;
 			else
 				buttonId = buttonIndex;
+            
+            globalButtonId = buttonId + offset;
 
-			bool wasdown = (m_buttons[i+d] & bit) > 0;
+			bool wasdown = (buttonData[i+d] & bit) > 0;
 			bool  isdown = (pData[i+d] & bit) > 0;
 
 			if( isdown && !wasdown ) {
 				unsigned int time = dataToTime(pData);
-				m_buttonTimes[buttonIndex] = time;
+				buttonTimes[buttonIndex] = time;
 
-				emit buttonDown(buttonId, time);
+				emit buttonDown(globalButtonId, time);
 			}
 			if( !isdown && wasdown ) {
 				unsigned int time = dataToTime(pData);
-				int duration = time - m_buttonTimes[buttonIndex];
-				m_buttonTimes[buttonIndex] = 0;
+				int duration = time - buttonTimes[buttonIndex];
+				buttonTimes[buttonIndex] = 0;
 
 				qWarning() << __PRETTY_FUNCTION__ << ": button" << buttonId << ", time =" << time << ", duration =" << duration;
 
-				emit buttonUp(handle, buttonId);
+				emit buttonUp(handle, globalButtonId);
 				emit buttonUp(buttonId, time, duration);
 			}
+			m_buttonTimes[handle] = buttonTimes;
 		}
 
 		// Update
-		m_buttons[i+d] = pData[i+d];
+		buttonData[i+d] = pData[i+d];
 	}
 }
 
