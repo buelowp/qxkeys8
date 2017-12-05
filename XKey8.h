@@ -37,8 +37,8 @@
 
 #include <iostream>
 #include <QtCore/QtCore>
-//#include <PieHid32.h>
-
+#include <PieHid32.h>
+/*
 struct TEnumHIDInfo {
     int Handle;
     int PID;
@@ -60,7 +60,7 @@ void GetErrorString(int err, char* out_str, int size);
 void CloseInterface(long hnd);
 unsigned int GetWriteLength(long hnd);
 unsigned int WriteData(long hnd, unsigned char *data);
-
+*/
 typedef enum {
 	OFF   = 0,
 	ON    = 1,
@@ -107,6 +107,7 @@ public:
 
     bool isButtonDown(int num);
 	void turnButtonLedsOff(int);
+    void turnButtonLedsOff();
 	void toggleButtonLEDState(int);
 
 	bool handleErrorEvent(unsigned int deviceID, unsigned int status);

@@ -86,7 +86,6 @@ void XKey8::queryForDevices()
 
 void XKey8::setupDevice(TEnumHIDInfo *d)
 {
-	char *p;
 	int h;
 	unsigned int e;
 
@@ -111,23 +110,22 @@ void XKey8::setupDevice(TEnumHIDInfo *d)
 	qDebug() << __PRETTY_FUNCTION__ << ": Device setup for PID" << d->PID << "with handle" << h;
     
     if ((e = SetupInterfaceEx(h)) != 0) {
-		std::cerr << __PRETTY_FUNCTION__ << ": Failed [" << e << "] Setting up PI Engineering Device at " << p << std::endl;
+		std::cerr << __PRETTY_FUNCTION__ << ": Failed [" << e << "] Setting up PI Engineering Device at " << d->DevicePath << std::endl;
 		return;
 	}
 
-    if ((e = SetDataCallback(h, m_bcb[h]) != 0) {
-		std::cerr << __PRETTY_FUNCTION__ << ": Critical Error [" << e << "] setting event callback for device at " << p << std::endl;
+    if ((e = SetDataCallback(h, m_bcb[h])) != 0) {
+		std::cerr << __PRETTY_FUNCTION__ << ": Critical Error [" << e << "] setting event callback for device at " << d->DevicePath << std::endl;
 		return;
 	}
 
     if ((e = SetErrorCallback(h, m_ecb[h])) != 0) {
-		std::cerr << __PRETTY_FUNCTION__ << ": Critical Error [" << e << "] setting error callback for device at " << p << std::endl;
+		std::cerr << __PRETTY_FUNCTION__ << ": Critical Error [" << e << "] setting error callback for device at " << d->DevicePath << std::endl;
 		return;
 	}
 
 	SuppressDuplicateReports(h, false); // true?
 
-    int startButton = h * XK8_BUTTONS;
 	m_deviceMap[h] = d;
 	m_devicePathMap[h] = QString(d->DevicePath);
     for (int i = 0; i < XK8_BUTTONS; i++) {
@@ -370,7 +368,7 @@ uint32_t XKey8::sendCommand(int handle, unsigned char command, unsigned char dat
 	result = WriteData(handle, buffer);
 
 	if (result != 0) {
-		std::cerr << "QXKeys: Write Error [" << result << "]  - Unable to write to Device at " << m_dev->DevicePath << std::endl;
+		qWarning() << "QXKeys: Write Error [" << result << "]  - Unable to write to Device at " << m_devicePathMap[handle];
 		queryForDevices();
 	}
 
@@ -409,4 +407,14 @@ void XKey8::turnButtonLedsOff()
     }
 }
 
+void XKey8::turnButtonLedsOff(int handle)
+{
+    QMap<int, TEnumHIDInfo*>::iterator i = m_deviceMap.find(handle);
+    if (i != m_deviceMap.end()) {
+        QList<int> globalButtons = m_buttonHandleMap.keys(handle);
+        foreach (int button, globalButtons) {
+            setButtonBlueLEDState(m_buttonTranslationMap[button], OFF);
+        }
+    }
+}
 
