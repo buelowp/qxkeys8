@@ -9,54 +9,32 @@
 
 XKey8::XKey8(QObject* parent) : QObject(parent)
 {
-	m_bcb = NULL;
-	m_ecb = NULL;
-    m_handle = 0;
-
 	m_buttons = new unsigned char[XK8_REPORT_LENGTH];
 	for (int i = 0; i < XK8_MAX_BUTTONS; i++) {
-		m_buttonTimes.push_back(0);
-		m_buttonLedState.push_back(LEDMode::OFF);
-	}
-}
-
-XKey8::XKey8(int dev, QObject* parent) : QObject(parent)
-{
-	m_bcb = NULL;
-	m_ecb = NULL;
-    m_handle = dev;
-
-	m_buttons = new unsigned char[XK8_REPORT_LENGTH];
-	for (int i = 0; i < XK8_MAX_BUTTONS; i++) {
-		m_buttonTimes.push_back(0);
-		m_buttonLedState.push_back(LEDMode::OFF);
+		m_buttonTimes[i] = 0;
+		m_buttonLedState[i] = LEDMode::OFF;
 	}
 }
 
 XKey8::~XKey8()
 {
-    for (int i = 0; i < m_devs.size(); i++) {
-        TEnumHIDInfo *panel = m_devs.at(i);
-        if (panel) {
-            CloseInterface(panel->Handle);
-        }
+    foreach (TEnumHIDInfo *panel, m_deviceMap) {
+        CloseInterface(panel->Handle);
     }
 
-    m_devs.clear();
-    m_devicePaths.clear();
+    m_deviceMap.clear();
+    m_devicePathMap.clear();
 	//delete m_dev; responsiblity of piehid
 	delete m_buttons;
 }
 
 bool XKey8::hasDevice(int handle)
 {
-    TEnumHIDInfo *panel;
-    
-    if (m_devs.isEmpty())
+    if (m_deviceMap.isEmpty())
         return false;
-    
-    panel = m_devs[handle];
-    if (!panel)
+
+    QMap<int, TEnumHIDInfo*>::iterator i = m_deviceMap.find(handle);
+    if (i == m_deviceMap.end())
         return false;
     
     return true;
@@ -111,52 +89,63 @@ void XKey8::setupDevice(TEnumHIDInfo *d)
 	char *p;
 	int h;
 	unsigned int e;
-    int startButton = m_buttonHandles.size() * XK8_BUTTONS;
 
 	if(d == NULL) {
+        qWarning() << __PRETTY_FUNCTION__ << ": HID Info struct is NULL, this is not good";
 		return;
 	}
 
-	p = d->DevicePath;
+    QMap<int, buttonCallback>::const_iterator i = m_bcb.find(h);
+    if (i == m_bcb.end()) {
+        qWarning() << __PRETTY_FUNCTION__ << ": no data callback defined for handle" << h;
+        return;
+    }
+
+    QMap<int, errorCallback>::const_iterator j = m_ecb.find(h);
+    if (j == m_ecb.end()) {
+        qWarning() << __PRETTY_FUNCTION__ << ": no error callback defined for handle" << h;
+        return;
+    }
+
     h = d->Handle;
-	qDebug() << __PRETTY_FUNCTION__ << ": Device setup for PID" << d->PID;
+	qDebug() << __PRETTY_FUNCTION__ << ": Device setup for PID" << d->PID << "with handle" << h;
     
-	e = SetupInterfaceEx(h);
-	if(e != 0) {
+    if ((e = SetupInterfaceEx(h)) != 0) {
 		std::cerr << __PRETTY_FUNCTION__ << ": Failed [" << e << "] Setting up PI Engineering Device at " << p << std::endl;
 		return;
 	}
 
-	e = SetDataCallback(h, m_bcb);
-	if(e != 0) {
+    if ((e = SetDataCallback(h, m_bcb[h]) != 0) {
 		std::cerr << __PRETTY_FUNCTION__ << ": Critical Error [" << e << "] setting event callback for device at " << p << std::endl;
 		return;
 	}
 
-	e = SetErrorCallback(h, m_ecb);
-	if(e != 0) {
+    if ((e = SetErrorCallback(h, m_ecb[h])) != 0) {
 		std::cerr << __PRETTY_FUNCTION__ << ": Critical Error [" << e << "] setting error callback for device at " << p << std::endl;
 		return;
 	}
 
 	SuppressDuplicateReports(h, false); // true?
 
-	m_devs[h] = d;
-	m_devicePaths[h] = d->DevicePath;
-    for (int i = startButton; i < XK8_BUTTONS; i++) {
-        m_buttonHandles[i] = h;
+    int startButton = h * XK8_BUTTONS;
+	m_deviceMap[h] = d;
+	m_devicePathMap[h] = QString(d->DevicePath);
+    for (int i = 0; i < XK8_BUTTONS; i++) {
+        int globalButton = h * XK8_BUTTONS + i;
+        m_buttonHandleMap[globalButton] = h;
+        m_buttonTranslationMap[globalButton] = i;
     }
 }
 
 bool XKey8::handleDataEvent(unsigned char *pData, unsigned int deviceID, unsigned int error)
 {
-	emit dataEvent(pData);
+	emit dataEvent(deviceID, pData);
 
     qDebug() << __PRETTY_FUNCTION__ << ": got data for device ID" << deviceID;
 	// Constant 214
 	if(pData[0] == 0 && pData[2] != 214)
 	{
-		processButtons(pData);
+		processButtons(deviceID, pData);
 	}
 
 	if(error != 0) {
@@ -168,11 +157,10 @@ bool XKey8::handleDataEvent(unsigned char *pData, unsigned int deviceID, unsigne
 
 bool XKey8::handleErrorEvent(unsigned int deviceID, unsigned int status)
 {
-    /*
-	if(!hasDevice()) {
+	if(!hasDevice(deviceID)) {
 		return false;
 	}
-*/
+
     qDebug() << __PRETTY_FUNCTION__ << ": got and error for device ID" << deviceID;
 	char err[128];
 	GetErrorString(status, err, 128);
@@ -180,15 +168,22 @@ bool XKey8::handleErrorEvent(unsigned int deviceID, unsigned int status)
 	std::cerr << "QXKeys: ErrorEvent deviceID: " << deviceID << std::endl;
 	qWarning() << err;
 
-	emit errorEvent(status);
+	emit errorEvent(deviceID, status);
 
-	queryForDevice();
+    /* TODO: Fix how this handles errors and add the call back in
+	queryForDevices();
+     */
 	return true;
 }
 
 bool XKey8::isButtonDown(int num)
 {
-	if(!hasDevice() || isNotButtonNumber(num)) {
+    int handle;
+    
+    if ((handle = getHandleForButton(num)) == -1)
+        return false;
+    
+	if(!hasDevice(handle) || isNotButtonNumber(num)) {
 		return false;
 	}
 	int col = 3 + num / 8; // button data stored in 3,4,5,6
@@ -202,27 +197,43 @@ bool XKey8::isButtonDown(int num)
 
 void XKey8::setFlashFrequency(unsigned char freq)
 {
-	if(!hasDevice()) {
-		return;
-	}
+    foreach (TEnumHIDInfo* panel, m_deviceMap) {
+        sendCommand(panel->Handle, XK8_CMD_FLSH_FR, freq);
+    }
+}
 
-	sendCommand(XK8_CMD_FLSH_FR, freq);
+void XKey8::setFlashFrequency(int handle, unsigned char freq)
+{
+    QMap<int, TEnumHIDInfo*>::iterator i = m_deviceMap.find(handle);
+    if (i != m_deviceMap.end())
+        sendCommand(handle, XK8_CMD_FLSH_FR, freq);
 }
 
 void XKey8::setBacklightIntensity(float blueBrightness)
 {
-	if(!hasDevice()) {
-		return;
-	}
-
-	// remove whole digits
-	blueBrightness -= (int)blueBrightness;
-	unsigned char bb = blueBrightness * 255;
-
-	// Red backlight LEDs are bank 2
-	sendCommand(XK8_CMD_LED_INT, bb);
+    foreach (TEnumHIDInfo *panel, m_deviceMap) {
+        // remove whole digits
+        blueBrightness -= (int)blueBrightness;
+        unsigned char bb = blueBrightness * 255;
+        
+        // Red backlight LEDs are bank 2
+        sendCommand(panel->Handle, XK8_CMD_LED_INT, bb);
+    }
 }
 
+void XKey8::setBacklightIntensity(int handle, float blueBrightness)
+{
+    QMap<int, TEnumHIDInfo*>::iterator i = m_deviceMap.find(handle);
+    if (i != m_deviceMap.end()) {
+        // remove whole digits
+        blueBrightness -= (int)blueBrightness;
+        unsigned char bb = blueBrightness * 255;
+            
+        // Red backlight LEDs are bank 2
+        sendCommand(handle, XK8_CMD_LED_INT, bb);
+    }
+}
+        
 void XKey8::toggleButtonLEDState(int b)
 {
 	if (m_buttonLedState[b] == LEDMode::OFF) {
@@ -233,38 +244,50 @@ void XKey8::toggleButtonLEDState(int b)
 		setButtonBlueLEDState(b, LEDMode::OFF);
 		m_buttonLedState[b] = LEDMode::OFF;
 	}
-
 }
 
-void XKey8::setButtonBlueLEDState(quint8 ledNum, LEDMode mode)
+void XKey8::setButtonBlueLEDState(int ledNum, LEDMode mode)
 {
-    TEnumHIDInfo *panel = 
-	if(!hasDevice() || isNotButtonNumber(ledNum)) {
+    int handle;
+    
+    if ((handle = getHandleForButton(ledNum)) == -1)
+        return;
+
+    if(!hasDevice(handle) || isNotButtonNumber(ledNum)) {
 		return;
 	}
 
-	sendCommand(XK8_CMD_BTN_LED, ledNum, mode);
+	sendCommand(handle, XK8_CMD_BTN_LED, ledNum, mode);
 	m_buttonLedState[ledNum] = mode;
 }
 
 void XKey8::setPanelLED(PanelLED ledNum, LEDMode mode)
 {
-	if(!hasDevice()) {
-		return;
-	}
+    int handle;
+    
+    if ((handle = getHandleForButton(ledNum)) == -1)
+        return;
+    
+    if(!hasDevice(handle) || isNotButtonNumber(ledNum)) {
+        return;
+    }
 
 	quint8 n = (quint8)ledNum;
 	quint8 m = (quint8)mode;
 
-	sendCommand(XK8_CMD_PNL_LED, n, m);
+	sendCommand(handle, XK8_CMD_PNL_LED, n, m);
 }
 
 bool XKey8::isNotButtonNumber(int num)
 {
-	return (!((num >= 0 && num <  6) | (num >= 8 && num < 10))) ;
+    QMap<int, int>::const_iterator i = m_buttonHandleMap.find(num);
+    if (i != m_buttonHandleMap.end())
+        return true;
+
+    return false;
 }
 
-void XKey8::processButtons(unsigned char *pData)
+void XKey8::processButtons(int handle, unsigned char *pData)
 {
 	int columns = 4;
 	int rows = 2;
@@ -297,7 +320,7 @@ void XKey8::processButtons(unsigned char *pData)
 
 				qWarning() << __PRETTY_FUNCTION__ << ": button" << buttonId << ", time =" << time << ", duration =" << duration;
 
-				emit buttonUp(m_handle, buttonId);
+				emit buttonUp(handle, buttonId);
 				emit buttonUp(buttonId, time, duration);
 			}
 		}
@@ -316,9 +339,10 @@ uint32_t XKey8::dataToTime(unsigned char *pData)
       (uint32_t)pData[10];
 }
 
-unsigned char * XKey8::createDataBuffer()
+unsigned char * XKey8::createDataBuffer(int handle)
 {
-	int length = GetWriteLength(m_dev->Handle);
+    qDebug() << __PRETTY_FUNCTION__ << ": creating data buffer for handle" << handle;
+	int length = GetWriteLength(handle);
 
 	unsigned char *buffer = new unsigned char[length];
 	memset(buffer, 0, length);
@@ -326,20 +350,14 @@ unsigned char * XKey8::createDataBuffer()
 	return buffer;
 }
 
-uint32_t XKey8::sendCommand(unsigned char command, int handle, unsigned char data1,  unsigned char data2, unsigned char data3)
+uint32_t XKey8::sendCommand(int handle, unsigned char command, unsigned char data1,  unsigned char data2, unsigned char data3)
 {
-    TEnumHIDInfo *device = m_devs[handle];
-    
-    if (!device) {
-        qWarning() << __PRETTY_FUNCTION__ << ": handle" << handle << "is not associated with a device";
-        return -1;
-    }
-    
-	if(!hasDevice()) {
+    unsigned char *buffer = createDataBuffer(handle);
+    uint32_t result;
+
+	if(!hasDevice(handle)) {
 		return -1;
 	}
-
-	unsigned char *buffer = createDataBuffer();
 
 	buffer[0]  = 0; // constant
 	buffer[1]  = command;
@@ -347,45 +365,48 @@ uint32_t XKey8::sendCommand(unsigned char command, int handle, unsigned char dat
 	buffer[3]  = data2;
 	buffer[4]  = data3;
 
-	uint32_t result;
-    qDebug() << __PRETTY_FUNCTION__ << ": writing data to handle" << m_dev->Handle;
+    qDebug() << __PRETTY_FUNCTION__ << ": writing data to handle" << handle;
     
-	result = WriteData(m_devs[handle]->Handle, buffer);
+	result = WriteData(handle, buffer);
 
 	if (result != 0) {
 		std::cerr << "QXKeys: Write Error [" << result << "]  - Unable to write to Device at " << m_dev->DevicePath << std::endl;
-		queryForDevice();
+		queryForDevices();
 	}
 
 	delete[] buffer;
 	return result;
 }
 
-QString XKey8::getProductString()
+QString XKey8::getProductString(int handle)
 {
-	if(!hasDevice()) {
+	if(!hasDevice(handle)) {
 		return QString();
 	}
 
-	QString q = m_dev->ProductString;
+	QString q = m_deviceMap[handle]->ProductString;
 	return q;
 }
 
 
 // public:
-QString XKey8::getManufacturerString()
+QString XKey8::getManufacturerString(int handle)
 {
-	if(!hasDevice()) {
+	if(!hasDevice(handle)) {
 		return QString();
 	}
 
-	QString q = m_dev->ManufacturerString;
+	QString q = m_deviceMap[handle]->ManufacturerString;
 	return q;
 }
 
 void XKey8::turnButtonLedsOff()
 {
-	  for (int i = 0; i < 10; i++) {
-		  setButtonBlueLEDState(i, OFF);
-	  }
+    QList<int> buttons = m_deviceMap.keys();
+    
+    for (int i = 0; i < buttons.size(); i++) {
+        setButtonBlueLEDState(i, OFF);
+    }
 }
+
+

@@ -18,6 +18,8 @@
 #define XK8_MAX_PANELS  4
 #define XK8_MAX_BUTTONS (XK8_BUTTONS * XK8_MAX_PANELS)
 
+#define MAX_XKEY_DEVICES        4
+
 #define XK8_CMD_BTN_LED 181
 #define XK8_CMD_PNL_LED 179
 #define XK8_CMD_DESC    214
@@ -35,7 +37,29 @@
 
 #include <iostream>
 #include <QtCore/QtCore>
-#include <PieHid32.h>
+//#include <PieHid32.h>
+
+struct TEnumHIDInfo {
+    int Handle;
+    int PID;
+    int UP;
+    char *DevicePath;
+    int Usage;
+    int readSize;
+    int writeSize;
+    int Version;
+};
+#define PI_VID                    0x5F3
+
+typedef unsigned int (*PHIDDataEvent)(unsigned char *pData, unsigned int deviceID, unsigned int error);
+typedef unsigned int (*PHIDErrorEvent)( unsigned int deviceID,unsigned int status);
+unsigned int EnumeratePIE(long VID, TEnumHIDInfo *info, long *count);
+unsigned int SetupInterfaceEx(long hnd);
+unsigned int SetDataCallback(long hnd, PHIDDataEvent pDataEvent);
+void GetErrorString(int err, char* out_str, int size);
+void CloseInterface(long hnd);
+unsigned int GetWriteLength(long hnd);
+unsigned int WriteData(long hnd, unsigned char *data);
 
 typedef enum {
 	OFF   = 0,
@@ -55,39 +79,48 @@ class XKey8 : public QObject {
 	Q_OBJECT
 public:
 	XKey8(QObject *parent = 0);
-    XKey8(int, QObject *parent = 0);
 	virtual ~XKey8();
 
-	bool         hasDevice(int handle); // && m_dev->Handle != 0
+	bool         hasDevice(int handle);
 
-    unsigned int getPID()           { return (hasDevice() ? m_dev->PID : 0); };
-    unsigned int getUsage()         { return (hasDevice() ? m_dev->Usage : 0); };
-    unsigned int getUP()            { return (hasDevice() ? m_dev->UP : 0); };
-    long         getReadSize()      { return (hasDevice() ? m_dev->readSize : 0); };
-    long         getWriteSize()     { return (hasDevice() ? m_dev->writeSize : 0);  };
-    unsigned int getHandle()        { return (hasDevice() ? m_dev->Handle : 0); };
-    unsigned int getVersion()       { return (hasDevice() ? m_dev->Version : 0); };
-    QString      getDevicePath()    { return (hasDevice() ? m_devicePath : ""); };
+    unsigned int getPID(int h)           { return (hasDevice(h) ? m_deviceMap[h]->PID : 0); };
+    unsigned int getUsage(int h)         { return (hasDevice(h) ? m_deviceMap[h]->Usage : 0); };
+    unsigned int getUP(int h)            { return (hasDevice(h) ? m_deviceMap[h]->UP : 0); };
+    long         getReadSize(int h)      { return (hasDevice(h) ? m_deviceMap[h]->readSize : 0); };
+    long         getWriteSize(int h)     { return (hasDevice(h) ? m_deviceMap[h]->writeSize : 0);  };
+    unsigned int getHandle(int h)        { return (hasDevice(h) ? m_deviceMap[h]->Handle : 0); };
+    unsigned int getVersion(int h)       { return (hasDevice(h) ? m_deviceMap[h]->Version : 0); };
+    QString      getDevicePath(int h)    { return (hasDevice(h) ? m_devicePathMap[h] : QString("")); };
+    int          getHandleForButton(int b)
+    {
+        QMap<int, int>::iterator i = m_buttonHandleMap.find(b);
+        if (i == m_buttonHandleMap.end())
+            return -1;
+        
+        return i.value();
+    }
 
-    QString getProductString();
-    QString getManufacturerString();
-    void registerCallback(buttonCallback b) { m_bcb = b; }
-    void registerErrorCallback(errorCallback e) { m_ecb = e; }
+    QString getProductString(int);
+    QString getManufacturerString(int);
+    void registerCallback(int h, buttonCallback b) { m_bcb[h] = b; }
+    void registerErrorCallback(int h, errorCallback e) { m_ecb[h] = e; }
 
     bool isButtonDown(int num);
-	void turnButtonLedsOff();
+	void turnButtonLedsOff(int);
 	void toggleButtonLEDState(int);
 
 	bool handleErrorEvent(unsigned int deviceID, unsigned int status);
-	bool handleDataEvent(unsigned char  *pData, unsigned int deviceID, unsigned int error);
+	bool handleDataEvent(unsigned char *pData, unsigned int deviceID, unsigned int error);
 
 public slots:
 	void queryForDevices();
 
 	void setBacklightIntensity(float blueBrightness);
+    void setBacklightIntensity(int, float);
 	void setFlashFrequency(unsigned char freq);
+    void setFlashFrequency(int, unsigned char);
 
-	void setButtonBlueLEDState(quint8 buttonNumber, LEDMode mode);
+	void setButtonBlueLEDState(int buttonNumber, LEDMode mode);
 
 	void setPanelLED(PanelLED ledNum, LEDMode mode);
 
@@ -96,8 +129,8 @@ signals:
 	void panelConnected();
     void panelConnected(int);
 
-	void errorEvent(unsigned int  status);
-	void dataEvent(unsigned char *pData);
+	void errorEvent(int, unsigned int  status);
+	void dataEvent(int, unsigned char *pData);
 
 	void buttonDown(int, unsigned int);
 	void buttonUp(int);
@@ -105,27 +138,35 @@ signals:
 	void buttonUp(int, unsigned int, int);
 
 protected:
-	TEnumHIDInfo* getDevice() { return m_dev; }
+	TEnumHIDInfo* getDevice(int h)
+    {
+        QMap<int, TEnumHIDInfo*>::iterator i = m_deviceMap.find(h);
+        if (i == m_deviceMap.end())
+            return NULL;
+        
+        return i.value();
+    }
 
 private:
 	void setupDevice(TEnumHIDInfo *dev);
-	void processButtons(unsigned char *pData);
+	void processButtons(int, unsigned char *pData);
 	bool isNotButtonNumber(int num);
 	uint32_t dataToTime(unsigned char *pData);
+    int translatePanelButtonToGlobalButton(int, int);
 
-	uint32_t sendCommand(unsigned char command, unsigned char data1 = 0, unsigned char data2 = 0, unsigned char data3 = 0);
+	uint32_t sendCommand(int, unsigned char, unsigned char data1 = 0, unsigned char data2 = 0, unsigned char data3 = 0);
 
-	unsigned char* createDataBuffer();
+	unsigned char* createDataBuffer(int);
 
-	QVector<TEnumHIDInfo*> m_devs;
-    QMap<int, int> m_buttonHandles;
+	QMap<int, TEnumHIDInfo*> m_deviceMap;        // Handle is the key
+    QMap<int, int> m_buttonHandleMap;       // Button number is the key, handle is the value
+    QMap<int, int> m_buttonTranslationMap;  // Global button is the key, panel button is the value
 	unsigned char *m_buttons;
-	QVector<int> m_buttonTimes;
-	QMap<int, QString> m_devicePaths;
-	buttonCallback m_bcb;
-	errorCallback m_ecb;
-	QVector<LEDMode> m_buttonLedState;
-    uint32_t m_handle;
+	QMap<int, int> m_buttonTimes;           // Button number is the key
+	QMap<int, QString> m_devicePathMap;       // Handle is the key
+    QMap<int, buttonCallback> m_bcb;        // Handle is the key
+	QMap<int, errorCallback> m_ecb;         // Handle is the key
+	QMap<int, LEDMode> m_buttonLedState;    // Button number is the key
 };
 
 #endif /* XKEY8_H_ */
