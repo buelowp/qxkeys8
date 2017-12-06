@@ -228,9 +228,10 @@ void XKey8::setFlashFrequency(unsigned char freq)
 
 void XKey8::setFlashFrequency(int handle, unsigned char freq)
 {
-    QMap<int, TEnumHIDInfo*>::iterator i = m_deviceMap.find(handle);
-    if (i != m_deviceMap.end())
+    if (m_deviceMap.contains(handle)) {
+        qDebug() << __PRETTY_FUNCTION__ << ": Setting frequency to" << freq << "for device" << handle;
         sendCommand(handle, XK8_CMD_FLSH_FR, freq);
+    }
 }
 
 void XKey8::setBacklightIntensity(float blueBrightness)
@@ -245,6 +246,13 @@ void XKey8::setBacklightIntensity(float blueBrightness)
     }
 }
 
+/**
+ * \func void XKey8::setBacklightIntensity(int handle, float blueBrightness)
+ * \param handle Device handle being targeted
+ * \param blueBrightness The brightness being requested as a float
+ * The blueBrightness parameter is a value from .0 to .9. We ignore
+ * all non mantissa values
+ */
 void XKey8::setBacklightIntensity(int handle, float blueBrightness)
 {
     QMap<int, TEnumHIDInfo*>::iterator i = m_deviceMap.find(handle);
@@ -297,7 +305,6 @@ void XKey8::setButtonBlueLEDState(int ledNum, LEDMode mode)
     }
 
     localButton = ledNum - (handle * 10);
-	qDebug() << __PRETTY_FUNCTION__ << ": Setting button" << localButton << "to state" << mode << "for panel" << handle;
 	sendCommand(handle, XK8_CMD_BTN_LED, localButton, mode);
 	m_buttonLedState[handle][localButton] = mode;
 }
@@ -400,6 +407,7 @@ uint32_t XKey8::sendCommand(int handle, unsigned char command, unsigned char dat
     uint32_t result;
 
 	if(!hasDevice(handle)) {
+        qWarning() << __PRETTY_FUNCTION__ << ": Unable to find device" << handle;
 		return -1;
 	}
 
@@ -409,8 +417,6 @@ uint32_t XKey8::sendCommand(int handle, unsigned char command, unsigned char dat
 	buffer[3]  = data2;
 	buffer[4]  = data3;
 
-    qDebug() << __PRETTY_FUNCTION__ << ": writing data to handle" << handle;
-    
 	result = WriteData(handle, buffer);
 
 	if (result != 0) {
