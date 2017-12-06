@@ -91,7 +91,7 @@ void XKey8::queryForDevices()
                 if (setupDevice(d)) {
                     sendCommand(d->Handle, XK8_CMD_DESC, 0);
                     sendCommand(d->Handle, XK8_CMD_TIMES, true);
-                    emit panelConnected(d->Handle);
+                    emit panelConnected(d->Handle, XK8_BUTTONS, (d->Handle * XK8_BUTTONS));
                 }
             }
 		}
@@ -194,12 +194,20 @@ bool XKey8::isButtonDown(int num)
     qDebug() << __PRETTY_FUNCTION__ << ": testing button" << num << "for down state";
     
     if ((handle = getHandleForButton(num)) == -1) {
+        qWarning() << __PRETTY_FUNCTION__ << ": Unable to find a handle for button" << num;
         return false;
     }
     
-	if(!hasDevice(handle) || isNotButtonNumber(num)) {
+	if(!hasDevice(handle)) {
+        qWarning() << __PRETTY_FUNCTION__ << ": No device found for handle" << handle;
 		return false;
 	}
+	
+    if (!isButtonNumber(num)) {
+        qWarning() << __PRETTY_FUNCTION__ << ": Button" << num << "is not available";
+        return false;
+    }
+
 	buttons = m_buttons[handle];
     
 	int col = 3 + num / 8; // button data stored in 3,4,5,6
@@ -283,7 +291,7 @@ void XKey8::setButtonBlueLEDState(int ledNum, LEDMode mode)
 		return;
 	}
 
-    if (isNotButtonNumber(ledNum)) {
+    if (!isButtonNumber(ledNum)) {
         qWarning() << __PRETTY_FUNCTION__ << ": Button" << ledNum << "isn't in the button map";
         return;
     }
@@ -294,32 +302,27 @@ void XKey8::setButtonBlueLEDState(int ledNum, LEDMode mode)
 	m_buttonLedState[handle][localButton] = mode;
 }
 
-void XKey8::setPanelLED(PanelLED ledNum, LEDMode mode)
+void XKey8::setPanelLED(int handle, PanelLED ledNum, LEDMode mode)
 {
-    int handle;
-    
-    if ((handle = getHandleForButton(ledNum)) == -1)
-        return;
-    
-    if(!hasDevice(handle) || isNotButtonNumber(ledNum)) {
+    if(!hasDevice(handle)) {
+        qWarning() << __PRETTY_FUNCTION__ << ": No device for handle" << handle;
         return;
     }
 
+    qDebug() << __PRETTY_FUNCTION__ << ": Setting Panel LED" << ledNum << "to state" << mode << "for device" << handle;
 	quint8 n = (quint8)ledNum;
 	quint8 m = (quint8)mode;
 
 	sendCommand(handle, XK8_CMD_PNL_LED, n, m);
 }
 
-bool XKey8::isNotButtonNumber(int num)
+bool XKey8::isButtonNumber(int num)
 {
-//    qDebug() << __PRETTY_FUNCTION__ << ": searching for button" << num << "in the button handle map";
-
     if (m_buttonHandleMap.contains(num)) {
-        return false;
+        return true;
     }
 
-    return true;
+    return false;
 }
 
 void XKey8::processButtons(int handle, unsigned char *pData)

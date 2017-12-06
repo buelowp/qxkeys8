@@ -123,12 +123,11 @@ public slots:
 
 	void setButtonBlueLEDState(int buttonNumber, LEDMode mode);
 
-	void setPanelLED(PanelLED ledNum, LEDMode mode);
+	void setPanelLED(int handle, PanelLED ledNum, LEDMode mode);
 
 signals:
 	void panelDisconnected();
-	void panelConnected();
-    void panelConnected(int);
+    void panelConnected(int, int, int);
 
 	void errorEvent(int, unsigned int  status);
 	void dataEvent(int, unsigned char *pData);
@@ -151,7 +150,7 @@ protected:
 private:
 	bool setupDevice(TEnumHIDInfo *dev);
 	void processButtons(int, unsigned char *pData);
-	bool isNotButtonNumber(int num);
+	bool isButtonNumber(int num);
 	uint32_t dataToTime(unsigned char *pData);
     int translatePanelButtonToGlobalButton(int, int);
 
