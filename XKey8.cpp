@@ -136,7 +136,11 @@ bool XKey8::setupDevice(TEnumHIDInfo *d)
 	m_deviceMap[h] = d;
 	m_devicePathMap[h] = QString(d->DevicePath);
     for (int i = 0; i < XK8_BUTTONS; i++) {
+        if (i == 6 || i == 7)
+            continue;
+        
         int globalButton = h * XK8_BUTTONS + i;
+//        qDebug() << __PRETTY_FUNCTION__ << ": Adding global button" << globalButton << "to the handle map and the translation map";
         m_buttonHandleMap[globalButton] = h;
         m_buttonTranslationMap[globalButton] = i;
     }
@@ -267,17 +271,27 @@ void XKey8::toggleButtonLEDState(int b)
 void XKey8::setButtonBlueLEDState(int ledNum, LEDMode mode)
 {
     int handle;
+    int localButton;
     
     if ((handle = getHandleForButton(ledNum)) == -1) {
+        qWarning() << __PRETTY_FUNCTION__ << ": Unable to find button" << ledNum << "in the handle for button map";
         return;
     }
 
-    if(!hasDevice(handle) || isNotButtonNumber(ledNum)) {
+    if(!hasDevice(handle)) {
+        qWarning() << __PRETTY_FUNCTION__ << ": handle" << handle << "is not a device";
 		return;
 	}
 
-	sendCommand(handle, XK8_CMD_BTN_LED, ledNum, mode);
-	m_buttonLedState[handle][ledNum] = mode;
+    if (isNotButtonNumber(ledNum)) {
+        qWarning() << __PRETTY_FUNCTION__ << ": Button" << ledNum << "isn't in the button map";
+        return;
+    }
+
+    localButton = ledNum - (handle * 10);
+	qDebug() << __PRETTY_FUNCTION__ << ": Setting button" << localButton << "to state" << mode << "for panel" << handle;
+	sendCommand(handle, XK8_CMD_BTN_LED, localButton, mode);
+	m_buttonLedState[handle][localButton] = mode;
 }
 
 void XKey8::setPanelLED(PanelLED ledNum, LEDMode mode)
@@ -299,11 +313,13 @@ void XKey8::setPanelLED(PanelLED ledNum, LEDMode mode)
 
 bool XKey8::isNotButtonNumber(int num)
 {
-    QMap<int, int>::const_iterator i = m_buttonHandleMap.find(num);
-    if (i != m_buttonHandleMap.end())
-        return true;
+//    qDebug() << __PRETTY_FUNCTION__ << ": searching for button" << num << "in the button handle map";
 
-    return false;
+    if (m_buttonHandleMap.contains(num)) {
+        return false;
+    }
+
+    return true;
 }
 
 void XKey8::processButtons(int handle, unsigned char *pData)
@@ -367,9 +383,7 @@ uint32_t XKey8::dataToTime(unsigned char *pData)
 
 unsigned char * XKey8::createDataBuffer(int handle)
 {
-    qDebug() << __PRETTY_FUNCTION__ << ": creating data buffer for handle" << handle;
 	int length = GetWriteLength(handle);
-    qDebug() << __PRETTY_FUNCTION__ << ": got buffer length" << length << "from XKey library";
     
 	unsigned char *buffer = new unsigned char[length];
 	memset(buffer, 0, length);
@@ -440,9 +454,10 @@ void XKey8::turnButtonLedsOff(int handle)
 {
     QMap<int, TEnumHIDInfo*>::iterator i = m_deviceMap.find(handle);
     if (i != m_deviceMap.end()) {
+        qDebug() << __PRETTY_FUNCTION__ << ": turning lights off for panel with handle" << handle;
         QList<int> globalButtons = m_buttonHandleMap.keys(handle);
         foreach (int button, globalButtons) {
-            setButtonBlueLEDState(m_buttonTranslationMap[button], OFF);
+            setButtonBlueLEDState(button, OFF);
         }
     }
 }
